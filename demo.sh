@@ -2,7 +2,7 @@
 
 cd "$(dirname "$0")" || exit 1
 
-# En macOS se usa el entorno virtual; en Linux, los paquetes del sistema
+# Only activate the virtual environment if it exists
 ACTIVATE=""
 [ -f .venv/bin/activate ] && ACTIVATE="source .venv/bin/activate && "
 
