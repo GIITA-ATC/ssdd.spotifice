@@ -139,8 +139,6 @@ def shutdown_on_interrupt(ic):
 
 
 def main(ic, player):
-    shutdown_on_interrupt(ic)
-
     servant = MediaRenderI(player)
 
     properties = ic.getProperties()
@@ -163,4 +161,5 @@ if __name__ == "__main__":
         sys.exit("Usage: media_render.py --Ice.Config=<config-file>")
 
     with Ice.initialize(sys.argv) as communicator, GstPlayer() as player:
+        shutdown_on_interrupt(communicator)
         main(communicator, player)

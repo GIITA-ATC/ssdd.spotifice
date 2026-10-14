@@ -90,12 +90,11 @@ class MediaProviderI(Spotifice.MediaProvider):
     # ---- StreamManager ----
     def open_stream(self, render_id, track_id, current=None):
         str_render_id = id2str(render_id)
-        track = self.get_track(track_id)
-
         if not render_id.name:
             raise Spotifice.BadIdentity(str_render_id, "Invalid render identity")
 
-        self.close_stream(render_id, current)
+        track = self.get_track(track_id)
+        self.close_stream(render_id)
         self.active_streams[str_render_id] = StreamedFile(track.info, track.path)
 
         logger.info("Open stream for track '{}' on render '{}'".format(
@@ -136,8 +135,6 @@ def shutdown_on_interrupt(ic):
 
 
 def main(ic):
-    shutdown_on_interrupt(ic)
-
     properties = ic.getProperties()
     identity = properties.getPropertyWithDefault(
         'Spotifice.MediaProvider.Identity',  str(uuid.uuid1()))
@@ -162,4 +159,5 @@ if __name__ == "__main__":
         sys.exit("Usage: media_provider.py --Ice.Config=<config-file>")
 
     with Ice.initialize(sys.argv) as communicator:
+        shutdown_on_interrupt(communicator)
         main(communicator)

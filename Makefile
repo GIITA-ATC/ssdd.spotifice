@@ -6,7 +6,7 @@ ACTIVATE := $(if $(wildcard .venv/bin/activate),. .venv/bin/activate &&,)
 check-slice:  check-spotifice_v0.ice
 
 check-%.ice: %.ice
-	slice2html -I /usr/share/ice/slice $< --output-dir /tmp
+	slice2html -I /usr/share/ice/slice $<
 
 test:
 	clear
@@ -25,7 +25,7 @@ run-%: media_%.py %.config
 	$(ACTIVATE) python3 $< --Ice.Config=$(word 2,$^)
 
 clean:
-	$(RM) -r Spotifice spotifice*.py *.html __pycache__ .pytest_cache
+	$(RM) -r Spotifice spotifice*.py *.html __pycache__ .pytest_cache Spotifice.html _sindex.html index.html
 
 distclean: clean
 	$(RM) -r media .venv portal2-ost.zip

@@ -23,8 +23,8 @@ module Spotifice {
     exception TrackError extends Error{};
 
     interface MusicLibrary {
-        idempotent TrackInfoSeq get_all_tracks() throws IOError;
-        idempotent TrackInfo get_track_info(string track_id) throws IOError, TrackError;
+        idempotent TrackInfoSeq get_all_tracks();
+        idempotent TrackInfo get_track_info(string track_id) throws TrackError;
     };
 
     interface StreamManager {
