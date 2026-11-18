@@ -7,6 +7,7 @@ from metadata import identify
 from .icetest import IceTestCase
 
 MEDIA = Path('test/media')
+PLAYLISTS = Path('test/playlists')
 
 
 class TestProvider(IceTestCase):
@@ -17,6 +18,7 @@ class TestProvider(IceTestCase):
         provider_props = {
             'Spotifice.MediaProviderAdapter.Endpoints': f'tcp -p {self.provider_port}',
             'Spotifice.MediaProvider.Content': str(MEDIA),
+            'Spotifice.MediaProvider.Playlists': str(PLAYLISTS),
             'Spotifice.MediaProvider.Identity': self.provider_identity
         }
         provider_strprx = f'{self.provider_identity}:tcp -p {self.provider_port} -t 500'

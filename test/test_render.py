@@ -10,6 +10,7 @@ from gst_player import GstPlayer
 from .icetest import IceTestCase
 
 MEDIA = Path('test/media')
+PLAYLISTS = Path('test/playlists')
 
 
 class TestRender(IceTestCase):
@@ -22,12 +23,13 @@ class TestRender(IceTestCase):
         provider_props = {
             'Spotifice.MediaProviderAdapter.Endpoints': f'tcp -p {self.provider_port}',
             'Spotifice.MediaProvider.Content': str(MEDIA),
+            'Spotifice.MediaProvider.Playlists': str(PLAYLISTS),
             'Spotifice.MediaProvider.Identity': self.provider_identity
         }
         provider_strprx = f'{self.provider_identity}:tcp -p {self.provider_port} -t 500'
         self.create_server(provider_main, provider_props)
 
-        player = GstPlayer()
+        self.player = player = GstPlayer()
         player.start()
         self.addCleanup(player.shutdown)
 

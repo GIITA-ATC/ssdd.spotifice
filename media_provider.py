@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 
+import json
 import logging
 import signal
 import sys
 import threading
 import uuid
 from collections import namedtuple
+from datetime import datetime
 from pathlib import Path
 from time import sleep
 
@@ -15,7 +17,7 @@ from Ice import identityToString as id2str
 import metadata
 from gst_transcoder import GstTranscoder
 
-Ice.loadSlice(f'-I{Ice.getSliceDir()} spotifice_v0.ice')
+Ice.loadSlice(f'-I{Ice.getSliceDir()} spotifice_v2.ice')
 import Spotifice  # type: ignore # noqa: E402
 
 logging.basicConfig(level=logging.INFO)
@@ -47,11 +49,17 @@ class StreamedFile:
 
 
 class MediaProviderI(Spotifice.MediaProvider):
-    def __init__(self, media_dir):
+    PLAYLIST_GLOB = '*.playlist'
+    PLAYLIST_DATE_FORMAT = '%d-%m-%Y'
+
+    def __init__(self, media_dir, playlist_dir):
         self.media_dir = Path(media_dir)
+        self.playlist_dir = Path(playlist_dir)
         self.tracks = {}  # track_id -> LocalTrack
+        self.playlists = {}  # playlist_id -> Playlist
         self.active_streams = {}  # media_render_id -> StreamedFile
         self.load_media()
+        self.load_playlists()
 
     def get_track(self, track_id):
         try:
@@ -74,6 +82,43 @@ class MediaProviderI(Spotifice.MediaProvider):
 
         logger.info(f"Load media:  {len(self.tracks)} tracks")
 
+    def load_playlists(self):
+        if not self.playlist_dir.is_dir():
+            logger.warning(f"Playlists directory not found: '{self.playlist_dir}'")
+            return
+
+        for filepath in sorted(self.playlist_dir.glob(self.PLAYLIST_GLOB)):
+            try:
+                playlist = self.read_playlist(filepath)
+            except (OSError, ValueError, KeyError, TypeError) as e:
+                logger.warning(f"Skipping playlist '{filepath.name}': {e}")
+                continue
+
+            self.playlists[playlist.id] = playlist
+
+        logger.info(f"Load playlists: {len(self.playlists)} playlists")
+
+    def read_playlist(self, filepath):
+        with filepath.open(encoding='utf-8') as file:
+            data = json.load(file)
+
+        created_at = datetime.strptime(data['created_at'], self.PLAYLIST_DATE_FORMAT)
+
+        track_ids = []
+        for track_id in data['track_ids']:
+            if track_id not in self.tracks:
+                logger.warning(f"Playlist '{data['id']}': unknown track '{track_id}' skipped")
+                continue
+            track_ids.append(track_id)
+
+        return Spotifice.Playlist(
+            id=data['id'],
+            name=data['name'],
+            description=data.get('description', ''),
+            owner=data.get('owner', ''),
+            created_at=int(created_at.timestamp()),
+            track_ids=track_ids)
+
     @staticmethod
     def track_info(filepath):
         return Spotifice.TrackInfo(
@@ -87,14 +132,25 @@ class MediaProviderI(Spotifice.MediaProvider):
     def get_track_info(self, track_id, current=None):
         return self.get_track(track_id).info
 
+    # ---- PlaylistManager ----
+    def get_all_playlists(self, current=None):
+        return list(self.playlists.values())
+
+    def get_playlist(self, playlist_id, current=None):
+        try:
+            return self.playlists[playlist_id]
+        except KeyError:
+            raise Spotifice.PlaylistError(playlist_id, "Playlist not found")
+
     # ---- StreamManager ----
     def open_stream(self, render_id, track_id, current=None):
         str_render_id = id2str(render_id)
+        track = self.get_track(track_id)
+
         if not render_id.name:
             raise Spotifice.BadIdentity(str_render_id, "Invalid render identity")
 
-        track = self.get_track(track_id)
-        self.close_stream(render_id)
+        self.close_stream(render_id, current)
         self.active_streams[str_render_id] = StreamedFile(track.info, track.path)
 
         logger.info("Open stream for track '{}' on render '{}'".format(
@@ -135,12 +191,16 @@ def shutdown_on_interrupt(ic):
 
 
 def main(ic):
+    shutdown_on_interrupt(ic)
+
     properties = ic.getProperties()
     identity = properties.getPropertyWithDefault(
         'Spotifice.MediaProvider.Identity',  str(uuid.uuid1()))
     media_dir = properties.getPropertyWithDefault(
         'Spotifice.MediaProvider.Content', 'media')
-    servant = MediaProviderI(Path(media_dir))
+    playlist_dir = properties.getPropertyWithDefault(
+        'Spotifice.MediaProvider.Playlists', 'playlists')
+    servant = MediaProviderI(Path(media_dir), Path(playlist_dir))
 
     adapter = ic.createObjectAdapter("Spotifice.MediaProviderAdapter")
     proxy = adapter.add(servant, ic.stringToIdentity(identity))
@@ -159,5 +219,4 @@ if __name__ == "__main__":
         sys.exit("Usage: media_provider.py --Ice.Config=<config-file>")
 
     with Ice.initialize(sys.argv) as communicator:
-        shutdown_on_interrupt(communicator)
         main(communicator)

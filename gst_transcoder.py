@@ -8,7 +8,7 @@ from gi.repository import Gst  # type: ignore # noqa: E402
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("GstTranscoder")
 
-Gst.init([])
+Gst.init(None)
 
 
 class TranscodeError(Exception):

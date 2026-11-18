@@ -1,0 +1,12 @@
+{
+    "id": "test-playlist-unknown",
+    "name": "With unknown track",
+    "description": "",
+    "owner": "UCLM ESI",
+    "created_at": "29-09-2025",
+    "track_ids": [
+        "55d35f150a852cd6",
+        "0000000000000000",
+        "453a4eb54b0a4250"
+    ]
+}

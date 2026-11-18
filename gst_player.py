@@ -114,7 +114,7 @@ class GstPlayer(threading.Thread):
         retval = Gst.parse_launch(self.PIPELINE)
         self.appsrc = retval.get_by_name('src')
         self.appsrc.set_properties(
-            format=Gst.Format.BYTES, block=True, is_live=True, max_bytes=8192)
+            format=Gst.Format.TIME, block=True, is_live=True, max_bytes=8192)
         self.appsrc.connect('need-data', self.on_need_data)
         return retval
 

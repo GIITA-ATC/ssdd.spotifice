@@ -1,0 +1,11 @@
+{
+    "id": "test-playlist-short",
+    "name": "Two short tracks",
+    "description": "",
+    "owner": "UCLM ESI",
+    "created_at": "29-09-2025",
+    "track_ids": [
+        "453a4eb54b0a4250",
+        "453a4eb54b0a4250"
+    ]
+}

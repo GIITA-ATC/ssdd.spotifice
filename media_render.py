@@ -13,7 +13,7 @@ from Ice import identityToString as id2str
 
 from gst_player import GstPlayer
 
-Ice.loadSlice(f'-I{Ice.getSliceDir()} spotifice_v0.ice')
+Ice.loadSlice(f'-I{Ice.getSliceDir()} spotifice_v2.ice')
 import Spotifice  # type: ignore # noqa: E402
 
 logging.basicConfig(level=logging.INFO)
@@ -25,6 +25,9 @@ class MediaRenderI(Spotifice.MediaRender):
         self.player = player
         self.provider = None
         self.current_track = None
+        self.playlist = None
+        self.playlist_index = 0
+        self.repeat = False
 
     def ensure_player_stopped(self):
         if self.player.is_playing():
@@ -44,6 +47,7 @@ class MediaRenderI(Spotifice.MediaRender):
             raise Spotifice.BadReference(reason=f"MediaProvider not reachable: {e}")
 
         self.provider = media_provider
+        self.playlist = None
         logger.info(f"Bound to MediaProvider '{id2str(media_provider.ice_getIdentity())}'")
 
     def unbind_media_provider(self, current=None):
@@ -53,11 +57,16 @@ class MediaRenderI(Spotifice.MediaRender):
             logger.error(f"Unbinding despite stop failure: {e.reason}")
 
         self.provider = None
+        self.playlist = None
         logger.info("Unbound MediaProvider")
 
     # --- ContentManager ---
 
     def load_track(self, track_id, current=None):
+        self.playlist = None
+        self.set_current_track(track_id, current)
+
+    def set_current_track(self, track_id, current):
         self.ensure_provider_bound()
 
         try:
@@ -72,6 +81,29 @@ class MediaRenderI(Spotifice.MediaRender):
 
     def get_current_track(self, current=None):
         return self.current_track
+
+    def load_playlist(self, playlist_id, current=None):
+        self.ensure_provider_bound()
+
+        playlist = self.provider.get_playlist(playlist_id)
+        if not playlist.track_ids:
+            raise Spotifice.PlaylistError(playlist_id, "Empty playlist")
+
+        self.set_current_track(playlist.track_ids[0], current)
+        self.playlist = playlist
+        self.playlist_index = 0
+        logger.info(f"Playlist loaded: {playlist.name}")
+
+    def set_playlist_track(self, index, current):
+        self.set_current_track(self.playlist.track_ids[index], current)
+        self.playlist_index = index
+
+    def next_index(self):
+        index = self.playlist_index + 1
+        if index < len(self.playlist.track_ids):
+            return index
+
+        return 0 if self.repeat else None
 
     # --- PlaybackController ---
 
@@ -88,7 +120,9 @@ class MediaRenderI(Spotifice.MediaRender):
 
     def play(self, current=None):
         assert current, "remote invocation required"
+        self.start_playing(current.id)
 
+    def start_playing(self, render_id):
         self.ensure_provider_bound()
 
         if not self.current_track:
@@ -97,12 +131,12 @@ class MediaRenderI(Spotifice.MediaRender):
         self.ensure_player_stopped()
 
         try:
-            self.provider.open_stream(current.id, self.current_track.id)
+            self.provider.open_stream(render_id, self.current_track.id)
         except Spotifice.BadIdentity as e:
             logger.error(f"Error starting stream: {e.reason}")
             raise Spotifice.StreamError(reason="Strean setup failed")
 
-        self.player.play(self.chunk_reader(current.id))
+        self.player.play(self.chunk_reader(render_id), self.on_track_exhausted(render_id))
         if not self.player.confirm_play_starts():
             raise Spotifice.PlayerError(reason="Failed to confirm playback")
 
@@ -119,6 +153,25 @@ class MediaRenderI(Spotifice.MediaRender):
 
         return read_chunk
 
+    def on_track_exhausted(self, render_id):
+        def play_next_in_playlist():
+            if not self.playlist:
+                return
+
+            index = self.next_index()
+            if index is None:
+                logger.info("End of playlist")
+                return
+
+            try:
+                self.current_track = self.provider.get_track_info(self.playlist.track_ids[index])
+                self.playlist_index = index
+                self.start_playing(render_id)
+            except Spotifice.Error as e:
+                logger.error(f"Playlist playback aborted: {e.reason}")
+
+        return play_next_in_playlist
+
     def stop(self, current=None):
         if self.provider and current:
             self.provider.close_stream(current.id)
@@ -127,6 +180,29 @@ class MediaRenderI(Spotifice.MediaRender):
             raise Spotifice.PlayerError(reason="Failed to confirm stop")
 
         logger.info("Stopped")
+
+    def next(self, current=None):
+        if not self.playlist:
+            logger.info("No playlist loaded")
+            return
+
+        index = self.next_index()
+        if index is None:
+            logger.info("No next track")
+            return
+
+        self.set_playlist_track(index, current)
+
+    def previous(self, current=None):
+        if not self.playlist or self.playlist_index == 0:
+            logger.info("No previous track")
+            return
+
+        self.set_playlist_track(self.playlist_index - 1, current)
+
+    def set_repeat(self, enabled, current=None):
+        self.repeat = enabled
+        logger.info(f"Repeat mode set to: {self.repeat}")
 
 
 def shutdown_on_interrupt(ic):
@@ -139,6 +215,8 @@ def shutdown_on_interrupt(ic):
 
 
 def main(ic, player):
+    shutdown_on_interrupt(ic)
+
     servant = MediaRenderI(player)
 
     properties = ic.getProperties()
@@ -161,5 +239,4 @@ if __name__ == "__main__":
         sys.exit("Usage: media_render.py --Ice.Config=<config-file>")
 
     with Ice.initialize(sys.argv) as communicator, GstPlayer() as player:
-        shutdown_on_interrupt(communicator)
         main(communicator, player)
